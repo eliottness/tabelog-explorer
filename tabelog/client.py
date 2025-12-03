@@ -50,25 +50,33 @@ class TabelogClient:
         else:
             base = BASE_URL
 
-        # Build path: rstLst/[filters]/[genre]/
-        # Order matters: filters come before genre
+        # Build path: rstLst/[filter]/[genre]/
+        # Note: Only ONE filter can be in the path. Additional filters go in query params.
         url = f"{base}/rstLst/"
+        query_params = []
 
-        # Add filters first
+        # Add first filter to path, rest to query params
         if filters:
-            for f in filters:
-                if f in FILTERS:
-                    url = url.rstrip("/") + f"/{FILTERS[f]}/"
+            valid_filters = [f for f in filters if f in FILTERS]
+            if valid_filters:
+                # First filter goes in path
+                url = url.rstrip("/") + f"/{FILTERS[valid_filters[0]]}/"
+                # Additional filters go in query params
+                for f in valid_filters[1:]:
+                    query_params.append(f"{FILTERS[f]}=1")
 
-        # Add genre after filters
+        # Add genre after filter
         if genre:
             if genre not in GENRES:
                 raise ValueError(f"Unknown genre: {genre}. Use list_genres() to see available options.")
             url = url.rstrip("/") + f"/{genre}/"
 
-        # Add search query
+        # Build query string
         if query:
-            url = f"{url}?vs=1&sw={quote(query)}"
+            query_params.insert(0, f"vs=1&sw={quote(query)}")
+
+        if query_params:
+            url = f"{url}?{'&'.join(query_params)}"
 
         soup = fetch_soup(url)
         return parse_search_results(soup)
