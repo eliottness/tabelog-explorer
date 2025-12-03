@@ -202,3 +202,124 @@ class TabelogClient:
     def list_genres(self) -> list[tuple[str, str, str]]:
         """List all available genres. Returns [(slug, japanese, english), ...]."""
         return list_genres()
+
+    def get_info_batch(self, restaurant_ids: list[str]) -> list[RestaurantDetail | None]:
+        """Get detailed info for multiple restaurants in parallel.
+
+        Args:
+            restaurant_ids: List of restaurant IDs
+
+        Returns:
+            List of RestaurantDetail (or None if not found), in same order as input
+        """
+        if not restaurant_ids:
+            return []
+        if len(restaurant_ids) == 1:
+            return [self.get_info(restaurant_ids[0])]
+
+        # Build URLs for each restaurant - try common area patterns
+        # This is a simplified approach; we try the most common sub-area first
+        region_map = {
+            "13": "tokyo",
+            "27": "osaka",
+            "26": "kyoto",
+            "40": "fukuoka",
+            "01": "hokkaido",
+            "23": "aichi",
+            "14": "kanagawa",
+        }
+
+        urls = []
+        id_to_url = {}
+        for rid in restaurant_ids:
+            prefix = rid[:2]
+            if prefix in region_map:
+                region = region_map[prefix]
+                area_code = f"A{prefix}01/A{prefix}0101"
+                url = f"{BASE_URL}/{region}/{area_code}/{rid}/"
+                urls.append(url)
+                id_to_url[rid] = url
+
+        if not urls:
+            # Fallback to sequential if no recognized prefixes
+            return [self.get_info(rid) for rid in restaurant_ids]
+
+        # Fetch all in parallel
+        soups = fetch_soups_parallel(urls)
+
+        # Parse results
+        results = []
+        for rid, soup, url in zip(restaurant_ids, soups, urls):
+            try:
+                detail = parse_restaurant_detail(soup, rid, url)
+                if detail:
+                    results.append(detail)
+                else:
+                    # Try fallback for this one
+                    results.append(self.get_info(rid))
+            except Exception:
+                results.append(self.get_info(rid))
+
+        return results
+
+    def get_reviews_batch(
+        self,
+        restaurant_ids: list[str],
+        max_pages: int = 1,
+    ) -> list[tuple[str, str, list[Review]]]:
+        """Fetch reviews for multiple restaurants in parallel.
+
+        Args:
+            restaurant_ids: List of restaurant IDs
+            max_pages: Pages per restaurant (default 1)
+
+        Returns:
+            List of (name, rating, reviews) tuples, in same order as input
+        """
+        if not restaurant_ids:
+            return []
+
+        # First, get info for all restaurants to get their URLs
+        infos = self.get_info_batch(restaurant_ids)
+
+        # Build review URLs for each restaurant
+        all_urls = []
+        url_map = []  # Track which URLs belong to which restaurant
+
+        for i, info in enumerate(infos):
+            if info:
+                base_url = info.url.rstrip("/") + "/dtlrvwlst/"
+                for pg in range(1, max_pages + 1):
+                    if pg == 1:
+                        all_urls.append(base_url)
+                    else:
+                        all_urls.append(f"{base_url}COND-0/smp1/?smp=1&lc=0&rvw_part=all&PG={pg}")
+                    url_map.append(i)
+            else:
+                url_map.append(i)  # Mark missing
+
+        # Fetch all review pages in parallel
+        soups = fetch_soups_parallel(all_urls)
+
+        # Parse and group by restaurant
+        results: list[tuple[str, str, list[Review]]] = [("", "", []) for _ in restaurant_ids]
+
+        soup_idx = 0
+        for i, info in enumerate(infos):
+            if info:
+                all_reviews: list[Review] = []
+                name = ""
+                rating = ""
+
+                for _ in range(max_pages):
+                    if soup_idx < len(soups):
+                        n, r, reviews = parse_reviews(soups[soup_idx])
+                        if not name:
+                            name = n
+                            rating = r
+                        all_reviews.extend(reviews)
+                        soup_idx += 1
+
+                results[i] = (name or info.name, rating or info.rating, all_reviews)
+
+        return results

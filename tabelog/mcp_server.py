@@ -208,6 +208,65 @@ def get_reviews(
 
 
 @mcp.tool
+def get_restaurant_info_batch(restaurant_ids: list[str]) -> list[dict | None]:
+    """Get comprehensive details for multiple restaurants in parallel.
+
+    Much faster than calling get_restaurant_info() multiple times.
+    Use after search_restaurants() to enrich top results with full details.
+
+    Args:
+        restaurant_ids: List of restaurant IDs from search results
+
+    Returns:
+        List of restaurant details (same order as input).
+        Each contains: name, rating, address, phone, hours, courses,
+        reservable, private_room, etc. None if restaurant not found.
+
+    Example:
+        results = search_restaurants(area="tokyo", genre="sushi", limit=5)
+        ids = [r["id"] for r in results]
+        details = get_restaurant_info_batch(ids)  # Fetches all 5 in parallel
+    """
+    details = _client.get_info_batch(restaurant_ids)
+    return [asdict(d) if d else None for d in details]
+
+
+@mcp.tool
+def get_reviews_batch(
+    restaurant_ids: list[str],
+    max_pages: int = 1,
+) -> list[dict]:
+    """Fetch reviews for multiple restaurants in parallel.
+
+    Much faster than calling get_reviews() multiple times.
+    Useful for comparing reviews across restaurants or analyzing trends.
+
+    Args:
+        restaurant_ids: List of restaurant IDs
+        max_pages: Review pages per restaurant (default 1, ~20 reviews each)
+
+    Returns:
+        List of review data (same order as input), each with:
+        - restaurant_name, rating
+        - reviews: List of {rating, title, body, visit_date}
+
+    Example:
+        results = search_restaurants(area="tokyo", genre="ramen", sort="rating", limit=3)
+        ids = [r["id"] for r in results]
+        all_reviews = get_reviews_batch(ids, max_pages=2)  # ~40 reviews per restaurant
+    """
+    results = _client.get_reviews_batch(restaurant_ids, max_pages=max_pages)
+    return [
+        {
+            "restaurant_name": name,
+            "rating": rating,
+            "reviews": [asdict(r) for r in reviews],
+        }
+        for name, rating, reviews in results
+    ]
+
+
+@mcp.tool
 def list_available_filters() -> list[dict]:
     """List all search filters for search_restaurants().
 
