@@ -1,6 +1,8 @@
 """HTTP utilities for Tabelog scraping."""
 
 import asyncio
+import time
+from typing import NamedTuple
 
 import aiohttp
 import requests
@@ -15,6 +17,43 @@ HEADERS = {
 
 _session: requests.Session | None = None
 
+# Simple cache with TTL
+CACHE_TTL = 300  # 5 minutes
+
+
+class CacheEntry(NamedTuple):
+    html: str
+    timestamp: float
+
+
+_cache: dict[str, CacheEntry] = {}
+
+
+def _get_cached(url: str) -> str | None:
+    """Get cached HTML if still valid."""
+    if url in _cache:
+        entry = _cache[url]
+        if time.time() - entry.timestamp < CACHE_TTL:
+            return entry.html
+        del _cache[url]
+    return None
+
+
+def _set_cache(url: str, html: str) -> None:
+    """Cache HTML content."""
+    # Limit cache size to prevent memory issues
+    if len(_cache) > 100:
+        # Remove oldest entries
+        sorted_entries = sorted(_cache.items(), key=lambda x: x[1].timestamp)
+        for key, _ in sorted_entries[:50]:
+            del _cache[key]
+    _cache[url] = CacheEntry(html=html, timestamp=time.time())
+
+
+def clear_cache() -> None:
+    """Clear the HTTP cache."""
+    _cache.clear()
+
 
 def _get_session() -> requests.Session:
     """Get or create a session with proper headers."""
@@ -25,19 +64,43 @@ def _get_session() -> requests.Session:
     return _session
 
 
-def fetch_soup(url: str) -> BeautifulSoup:
+def fetch_soup(url: str, use_cache: bool = True) -> BeautifulSoup:
     """Fetch URL and return BeautifulSoup object."""
+    # Check cache first
+    if use_cache:
+        cached = _get_cached(url)
+        if cached:
+            return BeautifulSoup(cached, "lxml")
+
     session = _get_session()
     response = session.get(url, timeout=30)
     response.raise_for_status()
+
+    # Cache the response
+    if use_cache:
+        _set_cache(url, response.text)
+
     return BeautifulSoup(response.text, "lxml")
 
 
-async def fetch_soup_async(url: str, session: aiohttp.ClientSession) -> BeautifulSoup:
+async def fetch_soup_async(
+    url: str, session: aiohttp.ClientSession, use_cache: bool = True
+) -> BeautifulSoup:
     """Fetch URL asynchronously and return BeautifulSoup object."""
+    # Check cache first
+    if use_cache:
+        cached = _get_cached(url)
+        if cached:
+            return BeautifulSoup(cached, "lxml")
+
     async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
         response.raise_for_status()
         text = await response.text()
+
+        # Cache the response
+        if use_cache:
+            _set_cache(url, text)
+
         return BeautifulSoup(text, "lxml")
 
 

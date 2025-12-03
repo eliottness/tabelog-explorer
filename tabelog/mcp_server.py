@@ -208,7 +208,10 @@ def get_reviews(
 
 
 @mcp.tool
-def get_restaurant_info_batch(restaurant_ids: list[str]) -> list[dict | None]:
+def get_restaurant_info_batch(
+    restaurant_ids: list[str],
+    urls: list[str] | None = None,
+) -> list[dict | None]:
     """Get comprehensive details for multiple restaurants in parallel.
 
     Much faster than calling get_restaurant_info() multiple times.
@@ -216,24 +219,27 @@ def get_restaurant_info_batch(restaurant_ids: list[str]) -> list[dict | None]:
 
     Args:
         restaurant_ids: List of restaurant IDs from search results
+        urls: Optional list of URLs from search results (faster - skips URL guessing)
 
     Returns:
         List of restaurant details (same order as input).
         Each contains: name, rating, address, phone, hours, courses,
         reservable, private_room, etc. None if restaurant not found.
 
-    Example:
+    Example (optimal - with URLs):
         results = search_restaurants(area="tokyo", genre="sushi", limit=5)
         ids = [r["id"] for r in results]
-        details = get_restaurant_info_batch(ids)  # Fetches all 5 in parallel
+        urls = [r["url"] for r in results]
+        details = get_restaurant_info_batch(ids, urls)  # Direct fetch, no guessing
     """
-    details = _client.get_info_batch(restaurant_ids)
+    details = _client.get_info_batch(restaurant_ids, urls=urls)
     return [asdict(d) if d else None for d in details]
 
 
 @mcp.tool
 def get_reviews_batch(
     restaurant_ids: list[str],
+    urls: list[str] | None = None,
     max_pages: int = 1,
 ) -> list[dict]:
     """Fetch reviews for multiple restaurants in parallel.
@@ -243,6 +249,7 @@ def get_reviews_batch(
 
     Args:
         restaurant_ids: List of restaurant IDs
+        urls: Optional list of URLs from search results (faster - skips lookup)
         max_pages: Review pages per restaurant (default 1, ~20 reviews each)
 
     Returns:
@@ -250,12 +257,13 @@ def get_reviews_batch(
         - restaurant_name, rating
         - reviews: List of {rating, title, body, visit_date}
 
-    Example:
+    Example (optimal - with URLs):
         results = search_restaurants(area="tokyo", genre="ramen", sort="rating", limit=3)
         ids = [r["id"] for r in results]
-        all_reviews = get_reviews_batch(ids, max_pages=2)  # ~40 reviews per restaurant
+        urls = [r["url"] for r in results]
+        all_reviews = get_reviews_batch(ids, urls, max_pages=2)  # Direct fetch
     """
-    results = _client.get_reviews_batch(restaurant_ids, max_pages=max_pages)
+    results = _client.get_reviews_batch(restaurant_ids, urls=urls, max_pages=max_pages)
     return [
         {
             "restaurant_name": name,

@@ -94,8 +94,18 @@ class TabelogClient:
         soup = fetch_soup(url)
         return parse_search_results(soup)
 
-    def get_info(self, restaurant_id: str) -> RestaurantDetail | None:
-        """Get detailed info for a restaurant by ID."""
+    def get_info(self, restaurant_id: str, url: str | None = None) -> RestaurantDetail | None:
+        """Get detailed info for a restaurant by ID or URL.
+
+        Args:
+            restaurant_id: Restaurant ID
+            url: Optional URL (skips URL guessing if provided)
+        """
+        # If URL provided, use it directly
+        if url:
+            soup = fetch_soup(url)
+            return parse_restaurant_detail(soup, restaurant_id, url)
+
         # Region prefixes: ID prefix -> (region_name, area_prefix)
         region_map = {
             "13": ("tokyo", "13"),    # Tokyo
@@ -111,17 +121,24 @@ class TabelogClient:
         prefix = restaurant_id[:2]
         if prefix in region_map:
             region, area_prefix = region_map[prefix]
-            # Try common area patterns for this region
+            # Build all possible URLs and try in parallel
+            urls = []
             for sub in ["01", "02", "03", "04", "05"]:
                 area_code = f"A{area_prefix}01/A{area_prefix}01{sub}"
-                url = f"{BASE_URL}/{region}/{area_code}/{restaurant_id}/"
-                try:
-                    soup = fetch_soup(url)
-                    result = parse_restaurant_detail(soup, restaurant_id, url)
-                    if result:
-                        return result
-                except Exception:
-                    continue
+                urls.append(f"{BASE_URL}/{region}/{area_code}/{restaurant_id}/")
+
+            # Fetch all in parallel
+            try:
+                soups = fetch_soups_parallel(urls)
+                for soup, url in zip(soups, urls):
+                    try:
+                        result = parse_restaurant_detail(soup, restaurant_id, url)
+                        if result:
+                            return result
+                    except Exception:
+                        continue
+            except Exception:
+                pass
 
         # Fallback: search and verify ID matches
         results = self.search(query=restaurant_id)
@@ -203,11 +220,16 @@ class TabelogClient:
         """List all available genres. Returns [(slug, japanese, english), ...]."""
         return list_genres()
 
-    def get_info_batch(self, restaurant_ids: list[str]) -> list[RestaurantDetail | None]:
+    def get_info_batch(
+        self,
+        restaurant_ids: list[str],
+        urls: list[str] | None = None,
+    ) -> list[RestaurantDetail | None]:
         """Get detailed info for multiple restaurants in parallel.
 
         Args:
             restaurant_ids: List of restaurant IDs
+            urls: Optional list of URLs (same order as IDs) - skips URL guessing
 
         Returns:
             List of RestaurantDetail (or None if not found), in same order as input
@@ -215,10 +237,22 @@ class TabelogClient:
         if not restaurant_ids:
             return []
         if len(restaurant_ids) == 1:
-            return [self.get_info(restaurant_ids[0])]
+            url = urls[0] if urls else None
+            return [self.get_info(restaurant_ids[0], url=url)]
+
+        # If URLs provided, use them directly
+        if urls and len(urls) == len(restaurant_ids):
+            soups = fetch_soups_parallel(urls)
+            results = []
+            for rid, soup, url in zip(restaurant_ids, soups, urls):
+                try:
+                    detail = parse_restaurant_detail(soup, rid, url)
+                    results.append(detail)
+                except Exception:
+                    results.append(None)
+            return results
 
         # Build URLs for each restaurant - try common area patterns
-        # This is a simplified approach; we try the most common sub-area first
         region_map = {
             "13": "tokyo",
             "27": "osaka",
@@ -229,48 +263,56 @@ class TabelogClient:
             "14": "kanagawa",
         }
 
-        urls = []
-        id_to_url = {}
+        built_urls = []
         for rid in restaurant_ids:
             prefix = rid[:2]
             if prefix in region_map:
                 region = region_map[prefix]
                 area_code = f"A{prefix}01/A{prefix}0101"
-                url = f"{BASE_URL}/{region}/{area_code}/{rid}/"
-                urls.append(url)
-                id_to_url[rid] = url
+                built_urls.append(f"{BASE_URL}/{region}/{area_code}/{rid}/")
+            else:
+                built_urls.append("")  # Will need fallback
 
-        if not urls:
-            # Fallback to sequential if no recognized prefixes
+        # Fetch all valid URLs in parallel
+        valid_indices = [i for i, u in enumerate(built_urls) if u]
+        valid_urls = [built_urls[i] for i in valid_indices]
+
+        if not valid_urls:
             return [self.get_info(rid) for rid in restaurant_ids]
 
-        # Fetch all in parallel
-        soups = fetch_soups_parallel(urls)
+        soups = fetch_soups_parallel(valid_urls)
 
         # Parse results
-        results = []
-        for rid, soup, url in zip(restaurant_ids, soups, urls):
+        results: list[RestaurantDetail | None] = [None] * len(restaurant_ids)
+        for idx, soup, url in zip(valid_indices, soups, valid_urls):
+            rid = restaurant_ids[idx]
             try:
                 detail = parse_restaurant_detail(soup, rid, url)
                 if detail:
-                    results.append(detail)
+                    results[idx] = detail
                 else:
-                    # Try fallback for this one
-                    results.append(self.get_info(rid))
+                    results[idx] = self.get_info(rid)
             except Exception:
-                results.append(self.get_info(rid))
+                results[idx] = self.get_info(rid)
+
+        # Handle any that didn't have valid URLs
+        for i, rid in enumerate(restaurant_ids):
+            if results[i] is None and not built_urls[i]:
+                results[i] = self.get_info(rid)
 
         return results
 
     def get_reviews_batch(
         self,
         restaurant_ids: list[str],
+        urls: list[str] | None = None,
         max_pages: int = 1,
     ) -> list[tuple[str, str, list[Review]]]:
         """Fetch reviews for multiple restaurants in parallel.
 
         Args:
             restaurant_ids: List of restaurant IDs
+            urls: Optional list of restaurant URLs (skips info lookup)
             max_pages: Pages per restaurant (default 1)
 
         Returns:
@@ -279,47 +321,49 @@ class TabelogClient:
         if not restaurant_ids:
             return []
 
-        # First, get info for all restaurants to get their URLs
-        infos = self.get_info_batch(restaurant_ids)
+        # If URLs provided, use them directly; otherwise fetch info
+        if urls and len(urls) == len(restaurant_ids):
+            base_urls = [u.rstrip("/") + "/dtlrvwlst/" for u in urls]
+        else:
+            infos = self.get_info_batch(restaurant_ids, urls=urls)
+            base_urls = [
+                info.url.rstrip("/") + "/dtlrvwlst/" if info else ""
+                for info in infos
+            ]
 
         # Build review URLs for each restaurant
         all_urls = []
-        url_map = []  # Track which URLs belong to which restaurant
+        url_to_restaurant: list[int] = []  # Track which restaurant each URL belongs to
 
-        for i, info in enumerate(infos):
-            if info:
-                base_url = info.url.rstrip("/") + "/dtlrvwlst/"
+        for i, base_url in enumerate(base_urls):
+            if base_url:
                 for pg in range(1, max_pages + 1):
                     if pg == 1:
                         all_urls.append(base_url)
                     else:
                         all_urls.append(f"{base_url}COND-0/smp1/?smp=1&lc=0&rvw_part=all&PG={pg}")
-                    url_map.append(i)
-            else:
-                url_map.append(i)  # Mark missing
+                    url_to_restaurant.append(i)
 
         # Fetch all review pages in parallel
         soups = fetch_soups_parallel(all_urls)
 
         # Parse and group by restaurant
         results: list[tuple[str, str, list[Review]]] = [("", "", []) for _ in restaurant_ids]
+        restaurant_reviews: dict[int, list[Review]] = {i: [] for i in range(len(restaurant_ids))}
+        restaurant_meta: dict[int, tuple[str, str]] = {}
 
-        soup_idx = 0
-        for i, info in enumerate(infos):
-            if info:
-                all_reviews: list[Review] = []
-                name = ""
-                rating = ""
+        for soup, restaurant_idx in zip(soups, url_to_restaurant):
+            try:
+                name, rating, reviews = parse_reviews(soup)
+                if restaurant_idx not in restaurant_meta:
+                    restaurant_meta[restaurant_idx] = (name, rating)
+                restaurant_reviews[restaurant_idx].extend(reviews)
+            except Exception:
+                continue
 
-                for _ in range(max_pages):
-                    if soup_idx < len(soups):
-                        n, r, reviews = parse_reviews(soups[soup_idx])
-                        if not name:
-                            name = n
-                            rating = r
-                        all_reviews.extend(reviews)
-                        soup_idx += 1
-
-                results[i] = (name or info.name, rating or info.rating, all_reviews)
+        # Build final results
+        for i in range(len(restaurant_ids)):
+            name, rating = restaurant_meta.get(i, ("", ""))
+            results[i] = (name, rating, restaurant_reviews[i])
 
         return results
