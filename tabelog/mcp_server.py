@@ -56,8 +56,8 @@ def search_restaurants(
 
     Returns:
         List of restaurants, each with:
-        - id, url: IMPORTANT - pass these to batch methods for efficient lookups
-        - name, rating (e.g., "3.58"), area, cuisine
+        - id: Restaurant ID - use this with batch methods
+        - url, name, rating (e.g., "3.58"), area, cuisine
         - price_lunch, price_dinner (e.g., "¥1,000~¥1,999")
         - review_count, save_count (popularity indicators)
         - description: Promotional tagline
@@ -66,11 +66,10 @@ def search_restaurants(
     IMPORTANT - After searching, use BATCH methods for multiple restaurants:
         results = search_restaurants(area="tokyo", genre="sushi", limit=5)
         ids = [r["id"] for r in results]
-        urls = [r["url"] for r in results]  # Always extract URLs!
 
         # Use batch methods - NOT individual calls in a loop:
-        details = get_restaurant_info_batch(ids, urls)  # Parallel fetch
-        reviews = get_reviews_batch(ids, urls)          # Parallel fetch
+        details = get_restaurant_info_batch(ids)  # Parallel fetch
+        reviews = get_reviews_batch(ids)          # Parallel fetch
     """
     results = _client.search(
         query=query,
@@ -212,7 +211,6 @@ def get_reviews(
 @mcp.tool
 def get_restaurant_info_batch(
     restaurant_ids: list[str],
-    urls: list[str] | None = None,
 ) -> list[dict | None]:
     """Get comprehensive details for multiple restaurants in parallel.
 
@@ -220,28 +218,26 @@ def get_restaurant_info_batch(
        5 restaurants: ~1.5s (batch) vs ~7s (sequential)
 
     Args:
-        restaurant_ids: List of restaurant IDs from search results
-        urls: List of URLs from search results - ALWAYS PASS THIS for fastest results
+        restaurant_ids: List of restaurant IDs from search results.
+                        ONLY pass IDs, not URLs.
 
     Returns:
         List of restaurant details (same order as input).
         Each contains: name, rating, address, phone, hours, courses,
         reservable, private_room, etc. None if restaurant not found.
 
-    Example (ALWAYS do this after search):
+    Example:
         results = search_restaurants(area="tokyo", genre="sushi", limit=5)
         ids = [r["id"] for r in results]
-        urls = [r["url"] for r in results]  # Extract URLs from search!
-        details = get_restaurant_info_batch(ids, urls)
+        details = get_restaurant_info_batch(ids)
     """
-    details = _client.get_info_batch(restaurant_ids, urls=urls)
+    details = _client.get_info_batch(restaurant_ids)
     return [asdict(d) if d else None for d in details]
 
 
 @mcp.tool
 def get_reviews_batch(
     restaurant_ids: list[str],
-    urls: list[str] | None = None,
     max_pages: int = 1,
 ) -> list[dict]:
     """Fetch reviews for multiple restaurants in parallel.
@@ -250,8 +246,7 @@ def get_reviews_batch(
        3 restaurants × 2 pages: ~2s (batch) vs ~12s (sequential)
 
     Args:
-        restaurant_ids: List of restaurant IDs
-        urls: List of URLs from search results - ALWAYS PASS THIS for fastest results
+        restaurant_ids: List of restaurant IDs. ONLY pass IDs, not URLs.
         max_pages: Review pages per restaurant (default 1, ~20 reviews each)
 
     Returns:
@@ -259,13 +254,12 @@ def get_reviews_batch(
         - restaurant_name, rating
         - reviews: List of {rating, title, body, visit_date}
 
-    Example (ALWAYS do this after search):
+    Example:
         results = search_restaurants(area="tokyo", genre="ramen", limit=3)
         ids = [r["id"] for r in results]
-        urls = [r["url"] for r in results]  # Extract URLs from search!
-        all_reviews = get_reviews_batch(ids, urls, max_pages=2)
+        all_reviews = get_reviews_batch(ids, max_pages=2)
     """
-    results = _client.get_reviews_batch(restaurant_ids, urls=urls, max_pages=max_pages)
+    results = _client.get_reviews_batch(restaurant_ids, max_pages=max_pages)
     return [
         {
             "restaurant_name": name,
