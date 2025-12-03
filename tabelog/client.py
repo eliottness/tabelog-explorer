@@ -126,13 +126,19 @@ class TabelogClient:
 
         # Region prefixes: ID prefix -> (region_name, area_prefix)
         region_map = {
-            "13": ("tokyo", "13"),    # Tokyo
-            "27": ("osaka", "27"),    # Osaka
-            "26": ("kyoto", "26"),    # Kyoto
-            "40": ("fukuoka", "40"),  # Fukuoka
-            "01": ("hokkaido", "01"), # Hokkaido
-            "23": ("aichi", "23"),    # Aichi/Nagoya
-            "14": ("kanagawa", "14"), # Kanagawa/Yokohama
+            "01": ("hokkaido", "01"),   # Hokkaido
+            "11": ("saitama", "11"),    # Saitama
+            "12": ("chiba", "12"),      # Chiba
+            "13": ("tokyo", "13"),      # Tokyo
+            "14": ("kanagawa", "14"),   # Kanagawa/Yokohama
+            "22": ("shizuoka", "22"),   # Shizuoka
+            "23": ("aichi", "23"),      # Aichi/Nagoya
+            "26": ("kyoto", "26"),      # Kyoto
+            "27": ("osaka", "27"),      # Osaka
+            "28": ("hyogo", "28"),      # Hyogo/Kobe
+            "34": ("hiroshima", "34"),  # Hiroshima
+            "40": ("fukuoka", "40"),    # Fukuoka
+            "47": ("okinawa", "47"),    # Okinawa
         }
 
         # Try to determine region from ID prefix
@@ -272,13 +278,19 @@ class TabelogClient:
 
         # Build URLs for each restaurant - try common area patterns
         region_map = {
-            "13": "tokyo",
-            "27": "osaka",
-            "26": "kyoto",
-            "40": "fukuoka",
             "01": "hokkaido",
-            "23": "aichi",
+            "11": "saitama",
+            "12": "chiba",
+            "13": "tokyo",
             "14": "kanagawa",
+            "22": "shizuoka",
+            "23": "aichi",
+            "26": "kyoto",
+            "27": "osaka",
+            "28": "hyogo",
+            "34": "hiroshima",
+            "40": "fukuoka",
+            "47": "okinawa",
         }
 
         built_urls = []
