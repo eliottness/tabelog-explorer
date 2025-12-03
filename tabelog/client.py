@@ -50,19 +50,21 @@ class TabelogClient:
         else:
             base = BASE_URL
 
-        # Add genre to path
-        if genre:
-            if genre not in GENRES:
-                raise ValueError(f"Unknown genre: {genre}. Use list_genres() to see available options.")
-            url = f"{base}/rstLst/{genre}/"
-        else:
-            url = f"{base}/rstLst/"
+        # Build path: rstLst/[filters]/[genre]/
+        # Order matters: filters come before genre
+        url = f"{base}/rstLst/"
 
-        # Add filters
+        # Add filters first
         if filters:
             for f in filters:
                 if f in FILTERS:
                     url = url.rstrip("/") + f"/{FILTERS[f]}/"
+
+        # Add genre after filters
+        if genre:
+            if genre not in GENRES:
+                raise ValueError(f"Unknown genre: {genre}. Use list_genres() to see available options.")
+            url = url.rstrip("/") + f"/{genre}/"
 
         # Add search query
         if query:
