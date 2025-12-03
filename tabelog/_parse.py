@@ -27,6 +27,49 @@ def _get_table_value(soup: BeautifulSoup, header_text: str) -> str:
     return ""
 
 
+def _parse_last_order(hours: str) -> str:
+    """Extract last order time from hours string.
+
+    Patterns:
+    - "L.O. 21:30"
+    - "L.O. 料理23:00 ドリンク23:30" (food 23:00, drinks 23:30)
+    """
+    if not hours:
+        return ""
+
+    # Match L.O. followed by time(s), possibly with 料理/ドリンク labels
+    # Pattern: L.O. (料理)?HH:MM (ドリンク HH:MM)?
+    match = re.search(r"L\.O\.\s*(.+?)(?=月|火|水|木|金|土|日|祝|■|$)", hours)
+    if match:
+        lo_text = match.group(1).strip()
+        # Clean up - remove trailing text that's not part of last order
+        lo_text = re.sub(r"(営業|定休|無休).*$", "", lo_text).strip()
+        return lo_text
+    return ""
+
+
+def _parse_closed_days(hours: str) -> str:
+    """Extract closed days from hours string.
+
+    Patterns:
+    - "日・祝日定休日" -> "日・祝日"
+    - "土・日・祝日定休日" -> "土・日・祝日"
+    """
+    if not hours:
+        return ""
+
+    # Match pattern ending with 定休日
+    match = re.search(r"([月火水木金土日祝・]+)定休日", hours)
+    if match:
+        return match.group(1)
+
+    # Check for 無休 (no holidays)
+    if "無休" in hours:
+        return "無休"
+
+    return ""
+
+
 def parse_search_results(soup: BeautifulSoup) -> list[Restaurant]:
     """Parse restaurant search results page."""
     restaurants = []
@@ -161,6 +204,8 @@ def parse_restaurant_detail(soup: BeautifulSoup, restaurant_id: str, url: str) -
 
     # Hours
     hours = _get_table_value(soup, "営業時間")
+    last_order = _parse_last_order(hours)
+    closed_days = _parse_closed_days(hours)
 
     # Phone number
     phone_elem = soup.select_one(".rstinfo-table__tel-num")
@@ -210,6 +255,8 @@ def parse_restaurant_detail(soup: BeautifulSoup, restaurant_id: str, url: str) -
         reservable=reservable,
         reservation_status=reservation_status,
         courses=courses,
+        last_order=last_order,
+        closed_days=closed_days,
         seats=seats,
         private_room=private_room,
         smoking=smoking,

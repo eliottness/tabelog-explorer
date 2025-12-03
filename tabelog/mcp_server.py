@@ -205,11 +205,12 @@ def get_restaurant_info(restaurant_id: str) -> dict | None:
     Returns:
         Full details including:
         - Basic: id, name, rating, cuisine, url
-        - Location: address, access (nearest station/directions)
+        - Location: address, access (nearest station/walking time, e.g., "新橋駅から徒歩3分")
         - Prices: price_lunch, price_dinner (e.g., "¥3,000~¥3,999")
-        - Hours: hours (opening times, holidays)
+        - Hours: hours (full text), last_order (e.g., "21:30" or "料理23:00 ドリンク23:30"),
+                 closed_days (e.g., "日・祝日" or "無休" for no holidays)
         - Contact: phone, reservable (online booking available)
-        - Reservation: reservation_status (e.g., "予約可")
+        - Reservation: reservation_status (e.g., "予約可", may include cancellation policy)
         - Courses: List of set menus with name, price, num_items
         - Facilities: seats, private_room, smoking, parking
         - Payment: payment_methods, service_charge
@@ -285,8 +286,9 @@ def get_restaurant_info_batch(
 
     Returns:
         List of restaurant details (same order as input).
-        Each contains: name, rating, address, phone, hours, courses,
-        reservable, private_room, etc. None if restaurant not found.
+        Each contains: name, rating, address, access (station/walking time),
+        phone, hours, last_order, closed_days, courses, reservable,
+        reservation_status, private_room, etc. None if restaurant not found.
 
     Example:
         results = search_restaurants(area="tokyo", genre="sushi", limit=5)

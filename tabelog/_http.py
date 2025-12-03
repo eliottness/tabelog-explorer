@@ -1,6 +1,8 @@
 """HTTP utilities for Tabelog scraping."""
 
 import asyncio
+import logging
+import random
 import time
 from typing import NamedTuple
 
@@ -8,12 +10,20 @@ import aiohttp
 import requests
 from bs4 import BeautifulSoup
 
+logger = logging.getLogger(__name__)
+
 BASE_URL = "https://tabelog.com"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept-Language": "ja,en;q=0.9",
 }
+
+# Retry configuration
+MAX_RETRIES = 3
+BASE_DELAY = 1.0  # seconds
+MAX_DELAY = 10.0  # seconds
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 _session: requests.Session | None = None
 
@@ -64,8 +74,16 @@ def _get_session() -> requests.Session:
     return _session
 
 
+def _calculate_backoff(attempt: int) -> float:
+    """Calculate exponential backoff with jitter."""
+    delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+    # Add jitter (±25%)
+    jitter = delay * 0.25 * (2 * random.random() - 1)
+    return delay + jitter
+
+
 def fetch_soup(url: str, use_cache: bool = True) -> BeautifulSoup:
-    """Fetch URL and return BeautifulSoup object."""
+    """Fetch URL and return BeautifulSoup object with retry logic."""
     # Check cache first
     if use_cache:
         cached = _get_cached(url)
@@ -73,35 +91,102 @@ def fetch_soup(url: str, use_cache: bool = True) -> BeautifulSoup:
             return BeautifulSoup(cached, "lxml")
 
     session = _get_session()
-    response = session.get(url, timeout=30)
-    response.raise_for_status()
+    last_exception: Exception | None = None
 
-    # Cache the response
-    if use_cache:
-        _set_cache(url, response.text)
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = session.get(url, timeout=30)
 
-    return BeautifulSoup(response.text, "lxml")
+            # Check for retryable status codes
+            if response.status_code in RETRYABLE_STATUS_CODES:
+                delay = _calculate_backoff(attempt)
+                logger.warning(
+                    f"Request to {url} returned {response.status_code}, "
+                    f"retrying in {delay:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})"
+                )
+                time.sleep(delay)
+                continue
+
+            response.raise_for_status()
+
+            # Cache the response
+            if use_cache:
+                _set_cache(url, response.text)
+
+            return BeautifulSoup(response.text, "lxml")
+
+        except requests.exceptions.RequestException as e:
+            last_exception = e
+            if attempt < MAX_RETRIES - 1:
+                delay = _calculate_backoff(attempt)
+                logger.warning(
+                    f"Request to {url} failed: {e}, "
+                    f"retrying in {delay:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})"
+                )
+                time.sleep(delay)
+            else:
+                logger.error(f"Request to {url} failed after {MAX_RETRIES} attempts: {e}")
+
+    # If we get here, all retries failed
+    raise last_exception or requests.exceptions.RequestException(
+        f"Failed to fetch {url} after {MAX_RETRIES} attempts"
+    )
 
 
 async def fetch_soup_async(
     url: str, session: aiohttp.ClientSession, use_cache: bool = True
 ) -> BeautifulSoup:
-    """Fetch URL asynchronously and return BeautifulSoup object."""
+    """Fetch URL asynchronously and return BeautifulSoup object with retry logic."""
     # Check cache first
     if use_cache:
         cached = _get_cached(url)
         if cached:
             return BeautifulSoup(cached, "lxml")
 
-    async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-        response.raise_for_status()
-        text = await response.text()
+    last_exception: Exception | None = None
 
-        # Cache the response
-        if use_cache:
-            _set_cache(url, text)
+    for attempt in range(MAX_RETRIES):
+        try:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                # Check for retryable status codes
+                if response.status in RETRYABLE_STATUS_CODES:
+                    delay = _calculate_backoff(attempt)
+                    logger.warning(
+                        f"Async request to {url} returned {response.status}, "
+                        f"retrying in {delay:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
 
-        return BeautifulSoup(text, "lxml")
+                response.raise_for_status()
+                text = await response.text()
+
+                # Cache the response
+                if use_cache:
+                    _set_cache(url, text)
+
+                return BeautifulSoup(text, "lxml")
+
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            last_exception = e
+            if attempt < MAX_RETRIES - 1:
+                delay = _calculate_backoff(attempt)
+                logger.warning(
+                    f"Async request to {url} failed: {e}, "
+                    f"retrying in {delay:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})"
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.error(
+                    f"Async request to {url} failed after {MAX_RETRIES} attempts: {e}"
+                )
+
+    # If we get here, all retries failed
+    raise last_exception or aiohttp.ClientError(
+        f"Failed to fetch {url} after {MAX_RETRIES} attempts"
+    )
 
 
 async def fetch_soups_async(urls: list[str]) -> list[BeautifulSoup]:

@@ -58,8 +58,11 @@ class RestaurantDetail:
     # Reservation info
     phone: str = ""
     reservable: bool = False  # Online booking available
-    reservation_status: str = ""  # e.g., "予約可"
+    reservation_status: str = ""  # e.g., "予約可", may include cancellation policy
     courses: list[Course] = field(default_factory=list)
+    # Parsed time info
+    last_order: str = ""  # e.g., "21:30" or "料理23:00 ドリンク23:30"
+    closed_days: str = ""  # e.g., "日・祝日" (Sunday/holidays)
     # Facilities
     seats: str = ""
     private_room: str = ""
