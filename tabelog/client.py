@@ -43,6 +43,7 @@ class TabelogClient:
         genre: str | None = None,
         filters: list[str] | None = None,
         sort: str | None = None,
+        open_at: str | None = None,
     ) -> list[Restaurant]:
         """Search for restaurants.
 
@@ -52,6 +53,8 @@ class TabelogClient:
             genre: Genre slug (e.g., 'ramen', 'sushi')
             filters: List of filter names (e.g., ['private_room', 'non_smoking'])
             sort: Sort order ('trend', 'rating', 'reviews')
+            open_at: Filter by open time in HH:MM format (e.g., '19:00', '12:30')
+                     Use 'now' to filter by current time (Japan timezone)
         """
         # Build base URL
         if area:
@@ -87,6 +90,21 @@ class TabelogClient:
         # Add sort params
         if sort and sort in SORT_OPTIONS and SORT_OPTIONS[sort]:
             query_params.append(SORT_OPTIONS[sort])
+
+        # Add open_at time filter
+        if open_at:
+            if open_at.lower() == "now":
+                # Get current time in Japan timezone (UTC+9)
+                from datetime import datetime, timezone, timedelta
+                jst = timezone(timedelta(hours=9))
+                now = datetime.now(jst)
+                hh, mm = now.hour, now.minute
+            else:
+                # Parse HH:MM format
+                parts = open_at.split(":")
+                hh = int(parts[0])
+                mm = int(parts[1]) if len(parts) > 1 else 0
+            query_params.append(f"hh={hh}&hm={mm:02d}")
 
         if query_params:
             url = f"{url}?{'&'.join(query_params)}"
