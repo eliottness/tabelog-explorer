@@ -83,10 +83,25 @@ class TabelogClient:
 
     def get_info(self, restaurant_id: str) -> RestaurantDetail | None:
         """Get detailed info for a restaurant by ID."""
-        # Try common Tokyo area patterns for IDs starting with 13
-        if restaurant_id.startswith("13"):
-            for area_code in ["A1301/A130101", "A1302/A130201", "A1303/A130301", "A1304/A130401"]:
-                url = f"{BASE_URL}/tokyo/{area_code}/{restaurant_id}/"
+        # Region prefixes: ID prefix -> (region_name, area_prefix)
+        region_map = {
+            "13": ("tokyo", "13"),    # Tokyo
+            "27": ("osaka", "27"),    # Osaka
+            "26": ("kyoto", "26"),    # Kyoto
+            "40": ("fukuoka", "40"),  # Fukuoka
+            "01": ("hokkaido", "01"), # Hokkaido
+            "23": ("aichi", "23"),    # Aichi/Nagoya
+            "14": ("kanagawa", "14"), # Kanagawa/Yokohama
+        }
+
+        # Try to determine region from ID prefix
+        prefix = restaurant_id[:2]
+        if prefix in region_map:
+            region, area_prefix = region_map[prefix]
+            # Try common area patterns for this region
+            for sub in ["01", "02", "03", "04", "05"]:
+                area_code = f"A{area_prefix}01/A{area_prefix}01{sub}"
+                url = f"{BASE_URL}/{region}/{area_code}/{restaurant_id}/"
                 try:
                     soup = fetch_soup(url)
                     result = parse_restaurant_detail(soup, restaurant_id, url)
@@ -94,11 +109,10 @@ class TabelogClient:
                         return result
                 except Exception:
                     continue
-            return None
 
-        # For non-Tokyo, search first
+        # Fallback: search and verify ID matches
         results = self.search(query=restaurant_id)
-        if results:
+        if results and results[0].id == restaurant_id:
             url = results[0].url
             soup = fetch_soup(url)
             return parse_restaurant_detail(soup, restaurant_id, url)
