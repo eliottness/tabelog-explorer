@@ -204,11 +204,15 @@ def info(restaurant_id: str):
 @main.command()
 @click.argument("restaurant_id", required=False)
 @click.option("--url", "-u", help="Fetch by URL instead of ID")
-def reviews(restaurant_id: str | None, url: str | None):
+@click.option("--page", "-p", default=1, help="Starting page number (default: 1)")
+@click.option("--pages", default=1, help="Number of pages to fetch (default: 1)")
+def reviews(restaurant_id: str | None, url: str | None, page: int, pages: int):
     """Fetch reviews for a restaurant.
 
     Examples:
         tabelog reviews 13002251
+        tabelog reviews 13002251 --pages 3       # Fetch 3 pages
+        tabelog reviews 13002251 --page 2        # Start from page 2
         tabelog reviews --url "https://tabelog.com/tokyo/..."
     """
     if not restaurant_id and not url:
@@ -216,12 +220,18 @@ def reviews(restaurant_id: str | None, url: str | None):
         raise SystemExit(1)
 
     try:
-        name, rating, review_list = client.get_reviews(restaurant_id=restaurant_id, url=url)
+        name, rating, review_list = client.get_reviews(
+            restaurant_id=restaurant_id,
+            url=url,
+            page=page,
+            max_pages=pages,
+        )
     except Exception as e:
         click.echo(f"Error fetching reviews: {e}", err=True)
         raise SystemExit(1)
 
-    click.echo(f"# {name} (Rating: {rating})\n")
+    page_info = f"page {page}" if pages == 1 else f"pages {page}-{page + pages - 1}"
+    click.echo(f"# {name} (Rating: {rating}) - {page_info}\n")
 
     if not review_list:
         click.echo("No reviews found.")

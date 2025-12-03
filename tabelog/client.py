@@ -108,22 +108,56 @@ class TabelogClient:
         self,
         restaurant_id: str | None = None,
         url: str | None = None,
+        page: int = 1,
+        max_pages: int = 1,
     ) -> tuple[str, str, list[Review]]:
-        """Fetch reviews for a restaurant. Returns (name, rating, reviews)."""
+        """Fetch reviews for a restaurant. Returns (name, rating, reviews).
+
+        Args:
+            restaurant_id: Restaurant ID
+            url: Restaurant URL
+            page: Starting page (1-indexed)
+            max_pages: Maximum number of pages to fetch (default 1)
+        """
+        # Build base review URL
         if url:
             if "/dtlrvwlst/" not in url:
-                url = url.rstrip("/") + "/dtlrvwlst/"
+                base_url = url.rstrip("/") + "/dtlrvwlst/"
+            else:
+                base_url = url.split("/dtlrvwlst/")[0] + "/dtlrvwlst/"
         elif restaurant_id:
             info = self.get_info(restaurant_id)
             if info:
-                url = info.url.rstrip("/") + "/dtlrvwlst/"
+                base_url = info.url.rstrip("/") + "/dtlrvwlst/"
             else:
                 raise ValueError(f"Restaurant {restaurant_id} not found")
         else:
             raise ValueError("Must provide either restaurant_id or url")
 
-        soup = fetch_soup(url)
-        return parse_reviews(soup)
+        all_reviews: list[Review] = []
+        restaurant_name = ""
+        overall_rating = ""
+
+        for pg in range(page, page + max_pages):
+            if pg == 1:
+                fetch_url = base_url
+            else:
+                # Pagination URL pattern
+                fetch_url = f"{base_url}COND-0/smp1/?smp=1&lc=0&rvw_part=all&PG={pg}"
+
+            soup = fetch_soup(fetch_url)
+            name, rating, reviews = parse_reviews(soup)
+
+            if not restaurant_name:
+                restaurant_name = name
+                overall_rating = rating
+
+            if not reviews:
+                break  # No more reviews
+
+            all_reviews.extend(reviews)
+
+        return restaurant_name, overall_rating, all_reviews
 
     def get_areas(self, region: str) -> list[Area]:
         """Fetch areas for a region dynamically."""
