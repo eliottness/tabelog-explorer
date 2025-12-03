@@ -117,4 +117,17 @@ def fetch_soups_parallel(urls: list[str]) -> list[BeautifulSoup]:
         return []
     if len(urls) == 1:
         return [fetch_soup(urls[0])]
-    return asyncio.run(fetch_soups_async(urls))
+
+    # Check if we're already in an async context
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop - safe to use asyncio.run()
+        return asyncio.run(fetch_soups_async(urls))
+
+    # Already in an async context - run in a separate thread to avoid
+    # "asyncio.run() cannot be called from a running event loop" error
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(asyncio.run, fetch_soups_async(urls))
+        return future.result()
