@@ -5,11 +5,46 @@ user reviews. Ratings are notoriously strict - a 3.5+ is considered excellent,
 and 4.0+ is exceptional. Most good restaurants score between 3.0-3.8.
 """
 
+import json
 from dataclasses import asdict
 
 from fastmcp import FastMCP
 
 from tabelog.client import FILTERS, TabelogClient
+
+
+def _parse_filters(filters: str | list[str] | None) -> list[str] | None:
+    """Parse filters from various input formats.
+
+    Handles:
+    - None -> None
+    - [] -> None
+    - ["solo", "counter"] -> ["solo", "counter"]
+    - '["solo", "counter"]' (JSON string) -> ["solo", "counter"]
+    - "solo,counter" (comma-separated) -> ["solo", "counter"]
+    - "solo" (single value) -> ["solo"]
+    """
+    if filters is None:
+        return None
+
+    if isinstance(filters, list):
+        return filters if filters else None
+
+    # String input - try JSON first, then comma-separated
+    filters = filters.strip()
+    if not filters:
+        return None
+
+    if filters.startswith("["):
+        try:
+            parsed = json.loads(filters)
+            return parsed if parsed else None
+        except json.JSONDecodeError:
+            pass
+
+    # Comma-separated or single value
+    result = [f.strip() for f in filters.split(",") if f.strip()]
+    return result if result else None
 
 # Create FastMCP server instance
 mcp = FastMCP("Tabelog Explorer")
@@ -20,10 +55,10 @@ _client = TabelogClient()
 
 @mcp.tool
 def search_restaurants(
-    query: str | None = None,
+    keyword: str | None = None,
     area: str | None = None,
     genre: str | None = None,
-    filters: list[str] | None = None,
+    filters: str | None = None,
     sort: str = "trend",
     open_at: str | None = None,
     limit: int = 20,
@@ -34,21 +69,23 @@ def search_restaurants(
     Most quality restaurants score 3.0-3.8.
 
     Args:
-        query: Free-text search (e.g., "焼肉", "omakase", restaurant name)
+        keyword: Location or restaurant name to search (e.g., "成田空港", "銀座", "Sukiyabashi Jiro").
+                 ⚠️ Do NOT put cuisine types here - use 'genre' parameter instead.
         area: Region or specific area. Common regions:
               - "tokyo", "osaka", "kyoto", "fukuoka", "hokkaido", "nagoya"
+              - "chiba" (Narita Airport), "kanagawa" (Yokohama)
               - For specific areas: "tokyo/A1301" (Ginza), "tokyo/A1303" (Shibuya)
               - Use get_areas("tokyo") to discover area codes
         genre: Cuisine type slug. Popular options:
               - Japanese: "sushi", "ramen", "izakaya", "yakitori", "tempura", "udon", "soba"
-              - Meat: "yakiniku" (BBQ), "sukiyaki", "shabu", "tonkatsu", "kushikatsu"
-              - Other: "curry", "italian", "french", "chinese", "cafe"
+              - Meat: "yakiniku" (BBQ), "tonkatsu"
+              - Western: "yoshoku" (洋食), "italian", "french", "curry"
+              - Other: "chinese", "cafe"
               - Use list_genres() for complete list
-        filters: Venue requirements (combine multiple):
-              - "private_room", "non_smoking", "lunch", "reservable"
-              - "solo" (solo-friendly), "date", "kids_ok"
-              - "counter", "tatami", "parking", "sunday_open"
-              - "all_you_can_drink", "all_you_can_eat", "card_ok"
+        filters: Venue requirements - comma-separated string (e.g., "solo,counter,card_ok").
+                 Available: "private_room", "non_smoking", "lunch", "reservable",
+                 "solo", "date", "kids_ok", "counter", "tatami", "parking",
+                 "sunday_open", "all_you_can_drink", "all_you_can_eat", "card_ok"
         sort: "trend" (default/popular), "rating" (highest rated), "reviews" (most reviewed)
         open_at: Filter by open time. Use "now" for current Japan time,
                  or specify time like "19:00", "12:30"
@@ -71,11 +108,12 @@ def search_restaurants(
         details = get_restaurant_info_batch(ids)  # Parallel fetch
         reviews = get_reviews_batch(ids)          # Parallel fetch
     """
+    parsed_filters = _parse_filters(filters)
     results = _client.search(
-        query=query,
+        keyword=keyword,
         area=area,
         genre=genre,
-        filters=filters,
+        filters=parsed_filters,
         sort=sort,
         open_at=open_at,
     )

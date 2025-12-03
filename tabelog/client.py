@@ -38,7 +38,7 @@ class TabelogClient:
 
     def search(
         self,
-        query: str | None = None,
+        keyword: str | None = None,
         area: str | None = None,
         genre: str | None = None,
         filters: list[str] | None = None,
@@ -48,9 +48,10 @@ class TabelogClient:
         """Search for restaurants.
 
         Args:
-            query: Search keyword
+            keyword: Location or restaurant name to search (e.g., '成田空港', '銀座', 'Sukiyabashi Jiro').
+                     Do NOT include cuisine types here - use 'genre' parameter instead.
             area: Area code (e.g., 'tokyo', 'tokyo/A1301')
-            genre: Genre slug (e.g., 'ramen', 'sushi')
+            genre: Genre slug (e.g., 'ramen', 'sushi', 'yoshoku')
             filters: List of filter names (e.g., ['private_room', 'non_smoking'])
             sort: Sort order ('trend', 'rating', 'reviews')
             open_at: Filter by open time in HH:MM format (e.g., '19:00', '12:30')
@@ -84,8 +85,8 @@ class TabelogClient:
             url = url.rstrip("/") + f"/{genre}/"
 
         # Build query string
-        if query:
-            query_params.insert(0, f"vs=1&sw={quote(query)}")
+        if keyword:
+            query_params.insert(0, f"vs=1&sw={quote(keyword)}")
 
         # Add sort params
         if sort and sort in SORT_OPTIONS and SORT_OPTIONS[sort]:

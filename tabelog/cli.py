@@ -16,9 +16,9 @@ def main():
 
 
 @main.command()
-@click.argument("query", required=False)
-@click.option("--area", "-a", help="Filter by area (e.g., tokyo, tokyo/A1301)")
-@click.option("--genre", "-g", help="Filter by cuisine type (e.g., ramen, sushi)")
+@click.argument("keyword", required=False)
+@click.option("--area", "-a", help="Filter by area (e.g., tokyo, chiba, tokyo/A1301)")
+@click.option("--genre", "-g", help="Filter by cuisine type (e.g., ramen, sushi, yoshoku)")
 @click.option("--private-room", is_flag=True, help="Has private room (個室)")
 @click.option("--non-smoking", is_flag=True, help="Non-smoking (禁煙)")
 @click.option("--lunch", is_flag=True, help="Lunch available (ランチ)")
@@ -37,7 +37,7 @@ def main():
 @click.option("--sort", "-s", type=click.Choice(["trend", "rating", "reviews"]), default="trend",
               help="Sort order: trend (default), rating (highest first), reviews (most reviews)")
 def search(
-    query: str | None,
+    keyword: str | None,
     area: str | None,
     genre: str | None,
     private_room: bool,
@@ -59,10 +59,13 @@ def search(
 ):
     """Search for restaurants.
 
+    KEYWORD is a location or restaurant name (e.g., "成田空港", "銀座").
+    For cuisine types, use --genre instead (e.g., --genre yoshoku).
+
     Examples:
-        tabelog search "sushi"
+        tabelog search "成田空港" --genre yoshoku --area chiba
         tabelog search --genre ramen --area tokyo
-        tabelog search "yakitori" --private-room --non-smoking
+        tabelog search "Sukiyabashi Jiro"
         tabelog search --lunch --solo -n 10
     """
     # Build filter list from flags
@@ -98,7 +101,7 @@ def search(
 
     try:
         results = client.search(
-            query=query,
+            keyword=keyword,
             area=area,
             genre=genre,
             filters=filters if filters else None,
@@ -116,8 +119,8 @@ def search(
         return
 
     title = "Search results"
-    if query:
-        title += f" for '{query}'"
+    if keyword:
+        title += f" for '{keyword}'"
     if genre:
         title += f" [{genre}]"
     if area:
