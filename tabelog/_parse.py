@@ -82,14 +82,18 @@ def parse_restaurant_detail(soup: BeautifulSoup, restaurant_id: str, url: str) -
     # Price (lunch/dinner)
     price_lunch = ""
     price_dinner = ""
-    budget_elems = soup.select(".rdheader-budget__price")
-    for elem in budget_elems:
-        text = elem.get_text(strip=True)
-        label = elem.find_previous_sibling()
-        if label and "昼" in label.get_text():
-            price_lunch = text
-        elif label and "夜" in label.get_text():
-            price_dinner = text
+    budget_container = soup.select_one(".rdheader-budget")
+    if budget_container:
+        for icon in budget_container.select(".rdheader-budget__icon"):
+            price_elem = icon.select_one(".rdheader-budget__price-target")
+            if not price_elem:
+                continue
+            price_text = price_elem.get_text(strip=True)
+            # Check for dinner/lunch icon
+            if icon.select_one(".c-rating-v3__time--dinner"):
+                price_dinner = price_text
+            elif icon.select_one(".c-rating-v3__time--lunch"):
+                price_lunch = price_text
 
     # Hours - find th containing 営業時間 and get sibling td
     hours = ""
