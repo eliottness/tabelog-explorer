@@ -25,6 +25,13 @@ FILTERS = {
     "tatami": "cond03-02-00",
 }
 
+# Sort options
+SORT_OPTIONS = {
+    "trend": None,  # Default - no params needed
+    "rating": "SrtT=rt&Srt=D&sort_mode=1",  # Highest rating
+    "reviews": "SrtT=rvcn&Srt=D",  # Most reviews
+}
+
 
 class TabelogClient:
     """Client for interacting with Tabelog."""
@@ -35,6 +42,7 @@ class TabelogClient:
         area: str | None = None,
         genre: str | None = None,
         filters: list[str] | None = None,
+        sort: str | None = None,
     ) -> list[Restaurant]:
         """Search for restaurants.
 
@@ -43,6 +51,7 @@ class TabelogClient:
             area: Area code (e.g., 'tokyo', 'tokyo/A1301')
             genre: Genre slug (e.g., 'ramen', 'sushi')
             filters: List of filter names (e.g., ['private_room', 'non_smoking'])
+            sort: Sort order ('trend', 'rating', 'reviews')
         """
         # Build base URL
         if area:
@@ -74,6 +83,10 @@ class TabelogClient:
         # Build query string
         if query:
             query_params.insert(0, f"vs=1&sw={quote(query)}")
+
+        # Add sort params
+        if sort and sort in SORT_OPTIONS and SORT_OPTIONS[sort]:
+            query_params.append(SORT_OPTIONS[sort])
 
         if query_params:
             url = f"{url}?{'&'.join(query_params)}"

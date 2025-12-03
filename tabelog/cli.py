@@ -34,6 +34,8 @@ def main():
 @click.option("--counter", is_flag=True, help="Has counter seats (カウンター席)")
 @click.option("--tatami", is_flag=True, help="Has tatami seating (座敷)")
 @click.option("--limit", "-n", default=20, help="Max results to show")
+@click.option("--sort", "-s", type=click.Choice(["trend", "rating", "reviews"]), default="trend",
+              help="Sort order: trend (default), rating (highest first), reviews (most reviews)")
 def search(
     query: str | None,
     area: str | None,
@@ -53,6 +55,7 @@ def search(
     counter: bool,
     tatami: bool,
     limit: int,
+    sort: str,
 ):
     """Search for restaurants.
 
@@ -99,6 +102,7 @@ def search(
             area=area,
             genre=genre,
             filters=filters if filters else None,
+            sort=sort,
         )
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
@@ -123,6 +127,15 @@ def search(
     for i, r in enumerate(results[:limit], 1):
         click.echo(f"{i}. **{r.name}** ({r.rating})")
         click.echo(f"   {r.area} | {r.cuisine}")
+        if r.description:
+            click.echo(f"   {r.description}")
+        stats = []
+        if r.review_count:
+            stats.append(f"{r.review_count} reviews")
+        if r.save_count:
+            stats.append(f"{r.save_count} saves")
+        if stats:
+            click.echo(f"   📊 {' | '.join(stats)}")
         click.echo(f"   ID: `{r.id}`")
         click.echo()
 
@@ -194,10 +207,50 @@ def info(restaurant_id: str):
         click.echo(f"**Cuisine:** {details.cuisine}")
     if details.address:
         click.echo(f"**Address:** {details.address}")
+    if details.phone:
+        click.echo(f"**Phone:** {details.phone}")
     if details.price_lunch or details.price_dinner:
         click.echo(f"**Price:** Lunch {details.price_lunch or 'N/A'} | Dinner {details.price_dinner or 'N/A'}")
     if details.hours:
         click.echo(f"**Hours:** {details.hours}")
+
+    # Reservation info
+    click.echo(f"\n## Reservations")
+    if details.reservable:
+        click.echo("**Online Booking:** Available ✓")
+    else:
+        click.echo("**Online Booking:** Not available")
+    if details.reservation_status:
+        click.echo(f"**Status:** {details.reservation_status}")
+
+    # Courses
+    if details.courses:
+        click.echo(f"\n## Courses ({len(details.courses)})")
+        for c in details.courses:
+            items = f" ({c.num_items})" if c.num_items else ""
+            click.echo(f"- {c.name}: ¥{c.price}{items}")
+
+    # Facilities
+    click.echo("\n## Facilities")
+    if details.seats:
+        click.echo(f"**Seats:** {details.seats}")
+    if details.private_room:
+        click.echo(f"**Private Room:** {details.private_room}")
+    if details.smoking:
+        click.echo(f"**Smoking:** {details.smoking}")
+    if details.parking:
+        click.echo(f"**Parking:** {details.parking}")
+
+    # Other info
+    if details.access or details.service_charge or details.payment_methods:
+        click.echo("\n## Other Info")
+        if details.access:
+            click.echo(f"**Access:** {details.access}")
+        if details.service_charge:
+            click.echo(f"**Service Charge:** {details.service_charge}")
+        if details.payment_methods:
+            click.echo(f"**Payment:** {details.payment_methods}")
+
     click.echo(f"\n**URL:** {details.url}")
 
 

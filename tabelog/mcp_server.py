@@ -19,6 +19,7 @@ def search_restaurants(
     area: str | None = None,
     genre: str | None = None,
     filters: list[str] | None = None,
+    sort: str = "trend",
     limit: int = 20,
 ) -> list[dict]:
     """Search for restaurants on Tabelog.
@@ -29,16 +30,19 @@ def search_restaurants(
         genre: Cuisine type slug (e.g., "ramen", "sushi", "izakaya").
                Use list_genres tool to see all available options.
         filters: List of filter names. Use list_available_filters to see options.
+        sort: Sort order - "trend" (default), "rating" (highest first), "reviews" (most reviews)
         limit: Maximum number of results (default: 20)
 
     Returns:
-        List of restaurant dictionaries with id, name, rating, area, cuisine, url
+        List of restaurant dictionaries with id, name, rating, area, cuisine, url,
+        description, review_count, save_count
     """
     results = _client.search(
         query=query,
         area=area,
         genre=genre,
         filters=filters,
+        sort=sort,
     )
     return [asdict(r) for r in results[:limit]]
 

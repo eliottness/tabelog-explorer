@@ -4,7 +4,7 @@ import re
 
 from bs4 import BeautifulSoup
 
-from .models import Area, Restaurant, RestaurantDetail, Review
+from .models import Area, Course, Restaurant, RestaurantDetail, Review
 
 
 def _extract_rating_from_class(classes: list[str]) -> str:
@@ -15,6 +15,16 @@ def _extract_rating_from_class(classes: list[str]) -> str:
             val = int(match.group(1))
             return f"{val / 10:.1f}"
     return "N/A"
+
+
+def _get_table_value(soup: BeautifulSoup, header_text: str) -> str:
+    """Get value from table row by header text."""
+    for th in soup.select("th"):
+        if header_text in th.get_text():
+            td = th.find_next_sibling("td")
+            if td:
+                return td.get_text(strip=True)
+    return ""
 
 
 def parse_search_results(soup: BeautifulSoup) -> list[Restaurant]:
@@ -43,6 +53,26 @@ def parse_search_results(soup: BeautifulSoup) -> list[Restaurant]:
             area_text = parts[0].strip() if parts else ""
             cuisine = parts[1].strip() if len(parts) > 1 else ""
 
+        # Enriched data
+        desc_elem = item.select_one(".list-rst__pr-title")
+        description = desc_elem.get_text(strip=True) if desc_elem else ""
+
+        review_count = 0
+        review_count_elem = item.select_one(".list-rst__rvw-count-num")
+        if review_count_elem:
+            try:
+                review_count = int(review_count_elem.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
+
+        save_count = 0
+        save_count_elem = item.select_one(".list-rst__save-count-num")
+        if save_count_elem:
+            try:
+                save_count = int(save_count_elem.get_text(strip=True).replace(",", ""))
+            except ValueError:
+                pass
+
         restaurants.append(Restaurant(
             id=rst_id,
             name=name,
@@ -50,6 +80,9 @@ def parse_search_results(soup: BeautifulSoup) -> list[Restaurant]:
             area=area_text,
             cuisine=cuisine,
             url=url,
+            description=description,
+            review_count=review_count,
+            save_count=save_count,
         ))
 
     return restaurants
@@ -95,14 +128,42 @@ def parse_restaurant_detail(soup: BeautifulSoup, restaurant_id: str, url: str) -
             elif icon.select_one(".c-rating-v3__time--lunch"):
                 price_lunch = price_text
 
-    # Hours - find th containing 営業時間 and get sibling td
-    hours = ""
-    for th in soup.select("th"):
-        if "営業時間" in th.get_text():
-            td = th.find_next_sibling("td")
-            if td:
-                hours = td.get_text(strip=True)
-            break
+    # Hours
+    hours = _get_table_value(soup, "営業時間")
+
+    # Phone number
+    phone_elem = soup.select_one(".rstinfo-table__tel-num")
+    phone = phone_elem.get_text(strip=True) if phone_elem else ""
+
+    # Reservation info
+    booking_params = soup.select_one("#js-booking-params")
+    reservable = bool(
+        booking_params and booking_params.get("data-booking-enabled") == "1"
+    )
+    reservation_status = _get_table_value(soup, "予約可否")
+
+    # Courses
+    courses: list[Course] = []
+    for course_elem in soup.select(".rstdtl-course-list"):
+        btn = course_elem.select_one("[data-course-name]")
+        if btn:
+            course_name = btn.get("data-course-name", "")
+            course_price = btn.get("data-real-price", "")
+            items_label = course_elem.select_one(".rstdtl-course-list__label")
+            num_items = items_label.get_text(strip=True) if items_label else ""
+            if course_name:
+                courses.append(Course(name=course_name, price=course_price, num_items=num_items))
+
+    # Facilities
+    seats = _get_table_value(soup, "席数")
+    private_room = _get_table_value(soup, "個室")
+    smoking = _get_table_value(soup, "禁煙")
+    parking = _get_table_value(soup, "駐車場")
+
+    # Other info
+    access = _get_table_value(soup, "交通手段")
+    service_charge = _get_table_value(soup, "サービス料")
+    payment_methods = _get_table_value(soup, "支払い方法")
 
     return RestaurantDetail(
         id=restaurant_id,
@@ -114,6 +175,17 @@ def parse_restaurant_detail(soup: BeautifulSoup, restaurant_id: str, url: str) -
         price_dinner=price_dinner,
         hours=hours,
         url=url,
+        phone=phone,
+        reservable=reservable,
+        reservation_status=reservation_status,
+        courses=courses,
+        seats=seats,
+        private_room=private_room,
+        smoking=smoking,
+        parking=parking,
+        access=access,
+        service_charge=service_charge,
+        payment_methods=payment_methods,
     )
 
 
