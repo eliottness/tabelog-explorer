@@ -2,7 +2,7 @@
 
 from urllib.parse import quote
 
-from ._http import BASE_URL, fetch_soup
+from ._http import BASE_URL, fetch_soup, fetch_soups_parallel
 from ._parse import parse_areas, parse_restaurant_detail, parse_reviews, parse_search_results
 from .genres import GENRES, get_genre_url, list_genres
 from .models import Area, Restaurant, RestaurantDetail, Review
@@ -145,6 +145,8 @@ class TabelogClient:
             url: Restaurant URL
             page: Starting page (1-indexed)
             max_pages: Maximum number of pages to fetch (default 1)
+
+        Uses parallel fetching when max_pages > 1 for better performance.
         """
         # Build base review URL
         if url:
@@ -161,18 +163,23 @@ class TabelogClient:
         else:
             raise ValueError("Must provide either restaurant_id or url")
 
+        # Build list of URLs to fetch
+        urls = []
+        for pg in range(page, page + max_pages):
+            if pg == 1:
+                urls.append(base_url)
+            else:
+                urls.append(f"{base_url}COND-0/smp1/?smp=1&lc=0&rvw_part=all&PG={pg}")
+
+        # Fetch all pages in parallel
+        soups = fetch_soups_parallel(urls)
+
+        # Parse results
         all_reviews: list[Review] = []
         restaurant_name = ""
         overall_rating = ""
 
-        for pg in range(page, page + max_pages):
-            if pg == 1:
-                fetch_url = base_url
-            else:
-                # Pagination URL pattern
-                fetch_url = f"{base_url}COND-0/smp1/?smp=1&lc=0&rvw_part=all&PG={pg}"
-
-            soup = fetch_soup(fetch_url)
+        for soup in soups:
             name, rating, reviews = parse_reviews(soup)
 
             if not restaurant_name:
