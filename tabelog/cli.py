@@ -129,6 +129,17 @@ def search(
         click.echo(f"   {r.area} | {r.cuisine}")
         if r.description:
             click.echo(f"   {r.description}")
+
+        # Price range
+        if r.price_lunch or r.price_dinner:
+            prices = []
+            if r.price_lunch:
+                prices.append(f"Lunch {r.price_lunch}")
+            if r.price_dinner:
+                prices.append(f"Dinner {r.price_dinner}")
+            click.echo(f"   💰 {' | '.join(prices)}")
+
+        # Stats
         stats = []
         if r.review_count:
             stats.append(f"{r.review_count} reviews")
@@ -136,6 +147,20 @@ def search(
             stats.append(f"{r.save_count} saves")
         if stats:
             click.echo(f"   📊 {' | '.join(stats)}")
+
+        # Featured review
+        if r.review_snippet:
+            click.echo(f"   💬 Review: ", nl=False)
+            if r.review_snippet.title:
+                click.echo(f'"{r.review_snippet.title}" - ', nl=False)
+            # Truncate review text to ~80 chars
+            text = r.review_snippet.text
+            if len(text) > 80:
+                text = text[:77] + "..."
+            click.echo(f"{text}")
+            if r.review_snippet.reviewer:
+                click.echo(f"      — {r.review_snippet.reviewer}")
+
         click.echo(f"   ID: `{r.id}`")
         click.echo()
 

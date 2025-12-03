@@ -13,6 +13,15 @@ class Course:
 
 
 @dataclass
+class ReviewSnippet:
+    """A brief review preview from search results."""
+
+    title: str  # Review headline
+    text: str  # Snippet of review text
+    reviewer: str  # Reviewer name
+
+
+@dataclass
 class Restaurant:
     """Restaurant basic info from search results."""
 
@@ -26,6 +35,11 @@ class Restaurant:
     description: str = ""  # Promotional text
     review_count: int = 0  # Number of reviews
     save_count: int = 0  # Number of people who saved it
+    # Price range
+    price_lunch: str = ""
+    price_dinner: str = ""
+    # Featured review
+    review_snippet: ReviewSnippet | None = None
 
 
 @dataclass

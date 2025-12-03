@@ -4,7 +4,7 @@ import re
 
 from bs4 import BeautifulSoup
 
-from .models import Area, Course, Restaurant, RestaurantDetail, Review
+from .models import Area, Course, Restaurant, RestaurantDetail, Review, ReviewSnippet
 
 
 def _extract_rating_from_class(classes: list[str]) -> str:
@@ -73,6 +73,34 @@ def parse_search_results(soup: BeautifulSoup) -> list[Restaurant]:
             except ValueError:
                 pass
 
+        # Price range
+        price_lunch = ""
+        price_dinner = ""
+        for info_item in item.select(".list-rst__info-item"):
+            price_val = info_item.select_one(".c-rating-v3__val")
+            if not price_val:
+                continue
+            price_text = price_val.get_text(strip=True)
+            if price_text == "-":
+                continue
+            if info_item.select_one(".c-rating-v3__time--dinner"):
+                price_dinner = price_text
+            elif info_item.select_one(".c-rating-v3__time--lunch"):
+                price_lunch = price_text
+
+        # Featured review snippet
+        review_snippet = None
+        comment_wrap = item.select_one(".list-rst__comment-wrap")
+        if comment_wrap:
+            title_elem = comment_wrap.select_one(".list-rst__comment-text strong")
+            title = title_elem.get_text(strip=True) if title_elem else ""
+            text_elem = comment_wrap.select_one(".list-rst__author-rvw-txt")
+            text = text_elem.get_text(strip=True) if text_elem else ""
+            reviewer_elem = comment_wrap.select_one(".list-rst__author-name")
+            reviewer = reviewer_elem.get_text(strip=True) if reviewer_elem else ""
+            if text:  # Only create snippet if there's actual text
+                review_snippet = ReviewSnippet(title=title, text=text, reviewer=reviewer)
+
         restaurants.append(Restaurant(
             id=rst_id,
             name=name,
@@ -83,6 +111,9 @@ def parse_search_results(soup: BeautifulSoup) -> list[Restaurant]:
             description=description,
             review_count=review_count,
             save_count=save_count,
+            price_lunch=price_lunch,
+            price_dinner=price_dinner,
+            review_snippet=review_snippet,
         ))
 
     return restaurants

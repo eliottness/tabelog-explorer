@@ -34,8 +34,11 @@ def search_restaurants(
         limit: Maximum number of results (default: 20)
 
     Returns:
-        List of restaurant dictionaries with id, name, rating, area, cuisine, url,
-        description, review_count, save_count
+        List of restaurant dictionaries with:
+        - id, name, rating, area, cuisine, url
+        - description, review_count, save_count
+        - price_lunch, price_dinner
+        - review_snippet (title, text, reviewer) - a featured review preview
     """
     results = _client.search(
         query=query,
