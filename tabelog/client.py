@@ -7,6 +7,61 @@ from ._parse import parse_areas, parse_restaurant_detail, parse_reviews, parse_s
 from .genres import GENRES, get_genre_url, list_genres
 from .models import Area, Restaurant, RestaurantDetail, Review
 
+# Price tier mappings: value -> yen amount
+# Value 0 means "no limit", values 1-16 map to specific yen amounts
+# Note: The progression is not linear (e.g., 7 = ¥8,000, not ¥7,000)
+PRICE_TIERS = {
+    0: None,      # No limit
+    1: 1000,
+    2: 2000,
+    3: 3000,
+    4: 4000,
+    5: 5000,
+    6: 6000,
+    7: 8000,      # Note: jumps from 6k to 8k
+    8: 10000,
+    9: 15000,
+    10: 20000,
+    11: 30000,
+    12: 40000,
+    13: 50000,
+    14: 60000,
+    15: 80000,
+    16: 100000,
+}
+
+# Reverse mapping: yen amount -> tier value
+YEN_TO_TIER = {v: k for k, v in PRICE_TIERS.items() if v is not None}
+
+
+def get_price_tier(yen: int | None) -> int:
+    """Convert yen amount to Tabelog price tier value.
+
+    Args:
+        yen: Price in yen (e.g., 3000 for ¥3,000). None means no limit.
+
+    Returns:
+        Tier value 0-16 for use in URL parameters.
+        Returns closest tier that doesn't exceed the requested amount for max,
+        or closest tier that meets/exceeds the amount for min.
+    """
+    if yen is None:
+        return 0
+
+    # Find exact match first
+    if yen in YEN_TO_TIER:
+        return YEN_TO_TIER[yen]
+
+    # Find closest tier
+    sorted_amounts = sorted(YEN_TO_TIER.keys())
+    for amount in sorted_amounts:
+        if amount >= yen:
+            return YEN_TO_TIER[amount]
+
+    # If yen is higher than max tier, return max
+    return 16
+
+
 # Common filter URL patterns
 FILTERS = {
     "private_room": "cond07-00-00",
@@ -44,6 +99,9 @@ class TabelogClient:
         filters: list[str] | None = None,
         sort: str | None = None,
         open_at: str | None = None,
+        price_min: int | None = None,
+        price_max: int | None = None,
+        meal_type: str | None = None,
     ) -> list[Restaurant]:
         """Search for restaurants.
 
@@ -56,16 +114,33 @@ class TabelogClient:
             sort: Sort order ('trend', 'rating', 'reviews')
             open_at: Filter by open time in HH:MM format (e.g., '19:00', '12:30')
                      Use 'now' to filter by current time (Japan timezone)
+            price_min: Minimum budget in yen (e.g., 1000 for ¥1,000). Server rounds to nearest tier.
+            price_max: Maximum budget in yen (e.g., 5000 for ¥5,000). Server rounds to nearest tier.
+            meal_type: 'lunch' or 'dinner' - required when using price filters.
+                       Determines which budget (lunch/dinner) to filter on.
+                       Note: Lunch filtering works well. Dinner filtering is best effort as
+                       Tabelog's URL-based dinner price filtering has limitations.
         """
+        # Validate price filter usage
+        if (price_min is not None or price_max is not None) and meal_type not in ("lunch", "dinner"):
+            raise ValueError("meal_type must be 'lunch' or 'dinner' when using price filters")
+
         # Build base URL
         if area:
             base = f"{BASE_URL}/{area}"
         else:
             base = BASE_URL
 
-        # Build path: rstLst/[filter]/[genre]/
+        # Build path: rstLst/[lunch]/[filter]/[genre]/
         # Note: Only ONE filter can be in the path. Additional filters go in query params.
+        # IMPORTANT: Lunch uses /lunch/ in path, but dinner does NOT use /dinner/ in path.
+        # Dinner price filters are applied via query params only (DnrCos, DnrCosT).
         url = f"{base}/rstLst/"
+
+        # Add lunch to path if specified (dinner does NOT go in path)
+        if meal_type == "lunch":
+            url = url.rstrip("/") + "/lunch/"
+
         query_params = []
 
         # Add first filter to path, rest to query params
@@ -106,6 +181,22 @@ class TabelogClient:
                 hh = int(parts[0])
                 mm = int(parts[1]) if len(parts) > 1 else 0
             query_params.append(f"hh={hh}&hm={mm:02d}")
+
+        # Add price filter params
+        # Lunch uses: LstCos (min), LstCosT (max)
+        # Dinner uses: DnrCos (min), DnrCosT (max)
+        # RdoCosTp=1 enables price filtering
+        if price_min is not None or price_max is not None:
+            query_params.append("RdoCosTp=1")
+            min_tier = get_price_tier(price_min)
+            max_tier = get_price_tier(price_max)
+
+            if meal_type == "lunch":
+                query_params.append(f"LstCos={min_tier}")
+                query_params.append(f"LstCosT={max_tier}")
+            else:  # dinner
+                query_params.append(f"DnrCos={min_tier}")
+                query_params.append(f"DnrCosT={max_tier}")
 
         if query_params:
             url = f"{url}?{'&'.join(query_params)}"

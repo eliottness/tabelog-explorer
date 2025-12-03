@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 from fastmcp import FastMCP
 
-from tabelog.client import FILTERS, TabelogClient
+from tabelog.client import FILTERS, PRICE_TIERS, TabelogClient
 
 
 def _parse_filters(filters: str | list[str] | None) -> list[str] | None:
@@ -61,6 +61,9 @@ def search_restaurants(
     filters: str | None = None,
     sort: str = "trend",
     open_at: str | None = None,
+    price_min: int | None = None,
+    price_max: int | None = None,
+    meal_type: str | None = None,
     limit: int = 20,
 ) -> list[dict]:
     """Search Tabelog, Japan's largest restaurant review site.
@@ -89,6 +92,15 @@ def search_restaurants(
         sort: "trend" (default/popular), "rating" (highest rated), "reviews" (most reviewed)
         open_at: Filter by open time. Use "now" for current Japan time,
                  or specify time like "19:00", "12:30"
+        price_min: Minimum budget in yen (e.g., 1000 for ¥1,000).
+                   Rounds to nearest tier: 1000, 2000, 3000, 4000, 5000, 6000, 8000,
+                   10000, 15000, 20000, 30000, 40000, 50000, 60000, 80000, 100000.
+                   Use list_price_tiers() to see all options.
+        price_max: Maximum budget in yen (e.g., 5000 for ¥5,000). Same tier rounding.
+        meal_type: "lunch" or "dinner" - REQUIRED when using price filters.
+                   Determines which meal budget to filter on.
+                   Note: Lunch price filtering works reliably. Dinner filtering is best-effort
+                   as Tabelog's URL-based dinner budget filtering has limitations.
         limit: Max results (default 20)
 
     Returns:
@@ -99,6 +111,17 @@ def search_restaurants(
         - review_count, save_count (popularity indicators)
         - description: Promotional tagline
         - review_snippet: Featured review with title, text, reviewer
+
+    Examples:
+        # Budget lunch under ¥2,000 in Tokyo
+        search_restaurants(area="tokyo", meal_type="lunch", price_max=2000)
+
+        # Mid-range dinner ¥5,000-¥10,000 sushi in Ginza
+        search_restaurants(area="tokyo/A1301", genre="sushi", meal_type="dinner",
+                          price_min=5000, price_max=10000)
+
+        # High-end dinner ¥20,000+ omakase
+        search_restaurants(genre="sushi", meal_type="dinner", price_min=20000)
 
     IMPORTANT - After searching, use BATCH methods for multiple restaurants:
         results = search_restaurants(area="tokyo", genre="sushi", limit=5)
@@ -116,6 +139,9 @@ def search_restaurants(
         filters=parsed_filters,
         sort=sort,
         open_at=open_at,
+        price_min=price_min,
+        price_max=price_max,
+        meal_type=meal_type,
     )
     return [asdict(r) for r in results[:limit]]
 
@@ -344,4 +370,30 @@ def list_available_filters() -> list[dict]:
     return [
         {"name": name, "description": desc}
         for name, desc in filter_descriptions.items()
+    ]
+
+
+@mcp.tool
+def list_price_tiers() -> list[dict]:
+    """List all price tier options for budget filtering.
+
+    Tabelog uses fixed price tiers (not arbitrary yen amounts). When you pass
+    price_min or price_max to search_restaurants(), the value is rounded to
+    the nearest tier.
+
+    Common price ranges:
+    - Budget lunch: price_max=1000 or 2000 (under ¥1,000 or ¥2,000)
+    - Mid-range: price_min=3000, price_max=5000 (¥3,000-¥5,000)
+    - High-end dinner: price_min=10000, price_max=20000 (¥10,000-¥20,000)
+    - Premium omakase: price_min=30000 (¥30,000+)
+
+    Call this only if you need the exact tier boundaries.
+
+    Returns:
+        List of price tiers with 'yen' amount and 'display' string
+    """
+    return [
+        {"yen": yen, "display": f"¥{yen:,}"}
+        for yen in sorted(PRICE_TIERS.values())
+        if yen is not None
     ]
