@@ -91,9 +91,14 @@ def parse_restaurant_detail(soup: BeautifulSoup, restaurant_id: str, url: str) -
         elif label and "夜" in label.get_text():
             price_dinner = text
 
-    # Hours
-    hours_elem = soup.select_one(".rstinfo-table__business-hours")
-    hours = hours_elem.get_text(strip=True) if hours_elem else ""
+    # Hours - find th containing 営業時間 and get sibling td
+    hours = ""
+    for th in soup.select("th"):
+        if "営業時間" in th.get_text():
+            td = th.find_next_sibling("td")
+            if td:
+                hours = td.get_text(strip=True)
+            break
 
     return RestaurantDetail(
         id=restaurant_id,
