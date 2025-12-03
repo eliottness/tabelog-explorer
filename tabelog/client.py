@@ -1,5 +1,6 @@
 """Tabelog API client."""
 
+import re
 from urllib.parse import quote
 
 from ._http import BASE_URL, fetch_soup, fetch_soups_parallel
@@ -62,6 +63,93 @@ def get_price_tier(yen: int | None) -> int:
     return 16
 
 
+def parse_price_range(price_str: str) -> tuple[int, int] | None:
+    """Parse price string like '¥1,000~¥1,999' to (min, max) yen.
+
+    Args:
+        price_str: Price string from Tabelog (e.g., '￥1,000～￥1,999', '～￥999')
+
+    Returns:
+        Tuple of (min_yen, max_yen) or None if no valid price.
+    """
+    if not price_str or price_str == "-":
+        return None
+
+    # Remove currency symbols and whitespace
+    cleaned = price_str.replace("¥", "").replace("￥", "").replace(",", "").replace(" ", "")
+
+    # Handle range separators (both ~ and ～)
+    if "~" in cleaned:
+        parts = cleaned.split("~")
+    elif "～" in cleaned:
+        parts = cleaned.split("～")
+    else:
+        parts = [cleaned]
+
+    try:
+        values = []
+        for part in parts:
+            match = re.search(r"(\d+)", part)
+            if match:
+                values.append(int(match.group(1)))
+
+        if not values:
+            return None
+
+        if len(values) == 1:
+            # Single value like "～￥999" means 0 to 999
+            if cleaned.startswith("~") or cleaned.startswith("～"):
+                return (0, values[0])
+            return (values[0], values[0])
+
+        return (values[0], values[1])
+    except (ValueError, IndexError):
+        return None
+
+
+def filter_by_price(
+    restaurants: list[Restaurant],
+    price_min: int | None,
+    price_max: int | None,
+    meal_type: str,
+) -> list[Restaurant]:
+    """Filter restaurants by price range.
+
+    Args:
+        restaurants: List of restaurants to filter
+        price_min: Minimum price in yen (inclusive)
+        price_max: Maximum price in yen (inclusive)
+        meal_type: 'lunch' or 'dinner' - which price to check
+
+    Returns:
+        Filtered list of restaurants matching the price range.
+    """
+    if price_min is None and price_max is None:
+        return restaurants
+
+    filtered = []
+    for r in restaurants:
+        price_str = r.price_lunch if meal_type == "lunch" else r.price_dinner
+        parsed = parse_price_range(price_str)
+
+        if parsed is None:
+            # No price data - skip this restaurant
+            continue
+
+        rest_min, rest_max = parsed
+
+        # Check if restaurant's price range overlaps with filter range
+        # Restaurant matches if any part of its range is within filter bounds
+        filter_min = price_min if price_min is not None else 0
+        filter_max = price_max if price_max is not None else float("inf")
+
+        # Overlap check: restaurant_min <= filter_max AND restaurant_max >= filter_min
+        if rest_min <= filter_max and rest_max >= filter_min:
+            filtered.append(r)
+
+    return filtered
+
+
 # Common filter URL patterns
 FILTERS = {
     "private_room": "cond07-00-00",
@@ -114,12 +202,10 @@ class TabelogClient:
             sort: Sort order ('trend', 'rating', 'reviews')
             open_at: Filter by open time in HH:MM format (e.g., '19:00', '12:30')
                      Use 'now' to filter by current time (Japan timezone)
-            price_min: Minimum budget in yen (e.g., 1000 for ¥1,000). Server rounds to nearest tier.
-            price_max: Maximum budget in yen (e.g., 5000 for ¥5,000). Server rounds to nearest tier.
+            price_min: Minimum budget in yen (e.g., 1000 for ¥1,000). Rounds to nearest tier.
+            price_max: Maximum budget in yen (e.g., 5000 for ¥5,000). Rounds to nearest tier.
             meal_type: 'lunch' or 'dinner' - required when using price filters.
                        Determines which budget (lunch/dinner) to filter on.
-                       Note: Lunch filtering works well. Dinner filtering is best effort as
-                       Tabelog's URL-based dinner price filtering has limitations.
         """
         # Validate price filter usage
         if (price_min is not None or price_max is not None) and meal_type not in ("lunch", "dinner"):
@@ -202,7 +288,13 @@ class TabelogClient:
             url = f"{url}?{'&'.join(query_params)}"
 
         soup = fetch_soup(url)
-        return parse_search_results(soup)
+        results = parse_search_results(soup)
+
+        # Apply client-side filtering for dinner (server-side dinner filtering is unreliable)
+        if meal_type == "dinner" and (price_min is not None or price_max is not None):
+            results = filter_by_price(results, price_min, price_max, meal_type)
+
+        return results
 
     def get_info(self, restaurant_id: str, url: str | None = None) -> RestaurantDetail | None:
         """Get detailed info for a restaurant by ID or URL.

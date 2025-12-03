@@ -99,8 +99,6 @@ def search_restaurants(
         price_max: Maximum budget in yen (e.g., 5000 for ¥5,000). Same tier rounding.
         meal_type: "lunch" or "dinner" - REQUIRED when using price filters.
                    Determines which meal budget to filter on.
-                   Note: Lunch price filtering works reliably. Dinner filtering is best-effort
-                   as Tabelog's URL-based dinner budget filtering has limitations.
         limit: Max results (default 20)
 
     Returns:
