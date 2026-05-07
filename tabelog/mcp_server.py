@@ -394,6 +394,5 @@ def list_price_tiers() -> list[dict]:
     """
     return [
         {"yen": yen, "display": f"¥{yen:,}"}
-        for yen in sorted(PRICE_TIERS.values())
-        if yen is not None
+        for yen in sorted(v for v in PRICE_TIERS.values() if v is not None)
     ]
